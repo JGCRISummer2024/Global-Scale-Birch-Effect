@@ -50,3 +50,6 @@ rsconnect/
 
 # SPEI data
 spei12.nc
+
+# worldclim data
+worldclim_data
