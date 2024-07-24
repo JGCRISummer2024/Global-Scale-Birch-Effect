@@ -52,4 +52,4 @@ rsconnect/
 spei12.nc
 
 # worldclim data
-worldclim_data/**/**/*.tif
+worldclim_data/climate/wc2.10m/*.tif
