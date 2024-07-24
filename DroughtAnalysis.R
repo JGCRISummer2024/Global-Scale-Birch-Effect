@@ -5,7 +5,7 @@ library(gridExtra)
 srdbData <- read.csv("srdb-data.csv") # get data
 
 srdbData %>% 
-  select(Latitude, Longitude, Study_midyear, Rs_annual, Rs_growingseason, Study_midyear, Ecosystem_type) %>% 
+  select(Latitude, Longitude, Study_midyear, Rs_annual, Rs_growingseason, Ecosystem_type) %>% 
   filter(!is.na(Rs_annual) | !is.na(Rs_growingseason)) ->
   srdb_filtered # srdb data that has data in either rs_annual, rs_growingseason, or both
 rsRange <- qplot(srdb_filtered$Rs_annual, geom = "boxplot", xlab = "Annual C flux values g / cm^2")
@@ -20,6 +20,8 @@ world_coords <- map_data("world")
 p <- ggplot(srdb_filtered_no_outliers, aes(Longitude, Latitude, color = Rs_annual)) + geom_map(data = world_coords, map = world_coords, aes(long, lat, map_id = region), color = "white", fill = "white", linewidth = 0.2) + geom_point()
 
 print(p)
+
+srdb_filtered$Latitude <- 
 # # boxplot of the years the data was collected
 # yearPlot <- qplot(srdb_filtered$Study_midyear, geom = "boxplot", xlab = "Year of data collection")
 # 
@@ -28,6 +30,11 @@ print(p)
 # 
 # # plot all the graphs
 # grid.arrange(p, yearPlot, rsRange, rsRangeNoOutliers, nrow = 2)
-# 
-# 
-# 
+
+
+
+#### NEXT STEPS
+# find a way to plot the Rs_annual and SPEI of a location on the same graph
+# find SRDB sites with an entry before and after the end of a drought and compare the CO2 flux
+# how to do that?
+# use nasa modis, worldclim

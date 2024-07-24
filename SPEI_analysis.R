@@ -11,9 +11,12 @@ getValue <- function(spatRaster, coords, time) { #spatRaster is spei
   timeList <- terra::extract(spatRaster, loc)
   print(timeList[time])
 }
+
+
 coords <- tribble(
   ~place,  ~lon,         ~lat,
-  "Boise City", -102.51464, 36.73183
+  "Thompson, MB", -99.94, 56.63
+
 )
 coords$ID <- seq_len(nrow(coords))
 
