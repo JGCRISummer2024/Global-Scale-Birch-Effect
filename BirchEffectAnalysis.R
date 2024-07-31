@@ -21,18 +21,14 @@ srdbData %>%
   filter(!is.na(Longitude)) %>%
   filter(!is.na(Study_midyear)) %>% 
   filter(Rs_annual >= 0) %>% 
-  filter(Rs_annual <= 4500) %>% 
-  filter(Latitude >= 0) ->
+  filter(Rs_annual <= 4500) ->
+  # TODO: maybe filter by latitude, or make it so it gets a different growing season for different places
   srdb_filtered
-srdb_filtered <- srdb_filtered[1:10,]
+#srdb_filtered <- srdb_filtered[1:10,] # TODO: delete when done (for testing)
 #make years easier to work with by elimiating the decimal
 srdb_filtered$Study_midyear <- floor(srdb_filtered$Study_midyear)
 
-# find growing season
-# growing season is the average time from the last frost to the first one
-# months where the average temperature is >0C?
-# months where the average low is >0C?
-# WorldClim only has minimum temp, not average min
+
 
 
 
@@ -49,7 +45,7 @@ if(file.exists(spei_dat_file)) {
   message("Extracting SPEI data; this is slow...")
   # Documentation: https://spei.csic.es/database.html
   # Data downloaded 2024-07-17
-  spei <- rast("spei12.nc")
+  spei <- rast("spei01.nc")
   
   # Extract our points of interest. terra::extract() will handle making sure
   # the coordinates get mapped to the correct grid cell(s) in the data
@@ -65,7 +61,49 @@ spei_monthly$year <- ceiling(spei_monthly$entry / 12) + 1900
 spei_monthly$month <- (spei_monthly$entry - 1) %% 12 + 1
 spei_monthly$time <- with(spei_monthly, year + (month-1) / 12)
 
+
+# find growing season
+# growing season is the average time from the last frost to the first one
+# months where the average temperature is >0C?
+# months where the average low is >0C?
+# WorldClim only has minimum temp, not average min
+
+# get worldclim
+mat <- worldclim_global("tavg", "10", "worldclim_data/")
+map <- worldclim_global("prec", "10", "worldclim_data/")
+
+locs <- c(srdb_filtered$Longitude, srdb_filtered$Latitude)
+
+matCoords <- terra::extract(mat, locs)
+mapCoords <- terra::extract(map, locs)
+
+# Remove useless ID column
+matCoords <- matCoords[,-which(names(matCoords) == "ID")]
+mapCoords <- mapCoords[,-which(names(mapCoords) == "ID")]
+
+# duplicate matCoords
+matCoordsSPEI <- matCoords[1:12]
+matCoordsSPEI[matCoordsSPEI < 0] <- NA # replace all subzero temps with NA
+matSPEIMeans <- rowMeans(matCoordsSPEI, na.rm = TRUE) # takes the mean temp of months above 0C (this isn't waht I want)
+# i want to get the months above 0 and average the SPEI of those months
+# hoW?
+
+
+
+
+
+# takes the mean annual temperature and the mean annual precipitation
+matMCoords <- rowMeans(matCoords, na.rm = TRUE)
+mapMCoords <- rowSums(mapCoords, na.rm = TRUE)
+
+
+
+
 # Compute gsd - growing season drought
+# TODO: Look at this step by step later, see what group_by is doing.
+# might need to remove year in order to do the dynamic growing season thing 
+# after year is ungrouped, set the SPEIS of the months with an average temp <0C to NA
+# and then do a rowmeans which you put into spei_monthly
 spei_monthly %>%
   arrange(ID, year, month) %>%
   group_by(ID, year) %>%
@@ -97,26 +135,7 @@ for(i in seq_len(nrow(srdb_filtered))) {
   srdb_filtered$gsd1[i] <- spei_i[2]
 }
 
-# SPEIcurr <- getSPEI()
-# SPEIprev <- getSPEI(data.frame(lon = srdb_filtered$Longitude, lat = srdb_filtered$Latitude, year = floor(srdb_filtered$Study_midyear - 1)))
-# get worldclim
-mat <- worldclim_global("tavg", "10", "worldclim_data/")
-map <- worldclim_global("prec", "10", "worldclim_data/")
 
-# Maybe average the monthly average temperatures so you get the yearly average?
-# so somewhere like Thompson might have a yearly average of 5C whereas Lima might have a yearly average of like 20C
-locs <- data.frame(Long = srdb_filtered$Longitude, Lat = srdb_filtered$Latitude)
-
-matCoords <- terra::extract(mat, locs[1:2])
-mapCoords <- terra::extract(map, locs[1:2])
-
-# Remove useless ID column
-matCoords <- matCoords[,-which(names(matCoords) == "ID")]
-mapCoords <- mapCoords[,-which(names(mapCoords) == "ID")]
-
-# takes the mean annual temperature and the mean annual precipitation
-matMCoords <- rowMeans(matCoords, na.rm = TRUE)
-mapMCoords <- rowSums(mapCoords, na.rm = TRUE)
 
 birchEffectData <- tibble(Longitude = srdb_filtered$Longitude, 
                               Latitude = srdb_filtered$Latitude,
@@ -125,8 +144,13 @@ birchEffectData <- tibble(Longitude = srdb_filtered$Longitude,
                               MAT = matMCoords,
                               MAP = mapMCoords,
                               spei_0 = srdb_filtered$gsd0,
-                              spei_1 = srdb_filtered$gsd1
+                              spei_1 = srdb_filtered$gsd1,
+                              # TODO: change flag, maybe
+                              spei_flag = (spei_0 >= 0 & spei_1 <= -1)
                               )
+model1 <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_0, data = birchEffectData)
+print(summary(model1))
+model2 <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_flag, data = birchEffectData)
 
-# As of 7/25/24, contains Long, Lat, Year, Flux, MAT, and MAP
+# As of 7/25/24, contains Long, Lat, Year, Flux, MAT, MAP, SPEI for the year, and SPEI for last year
 head(birchEffectData)
