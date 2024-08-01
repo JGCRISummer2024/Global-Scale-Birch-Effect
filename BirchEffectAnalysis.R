@@ -34,15 +34,16 @@ srdb_filtered$Study_midyear <- floor(srdb_filtered$Study_midyear)
 
 # CACHING SPEI DATA
 coords <- tibble(Longitude = srdb_filtered$Longitude, Latitude = srdb_filtered$Latitude)
-coords %>% 
+coords %>%
   distinct() ->
   coords
+
 spei_dat_file <- paste("spei", nrow(coords), digest::digest(coords), sep = "_")
 if(file.exists(spei_dat_file)) {
   message("Loading saved data ", spei_dat_file)
   spei_dat <- readRDS(spei_dat_file)
 } else {
-  message("Extracting SPEI data; this is slow...")
+  message("Extracting SPEI data; this will take 2+ hours...")
   # Documentation: https://spei.csic.es/database.html
   # Data downloaded 2024-07-17
   spei <- rast("spei01.nc")
@@ -72,44 +73,38 @@ spei_monthly$time <- with(spei_monthly, year + (month-1) / 12)
 mat <- worldclim_global("tavg", "10", "worldclim_data/")
 map <- worldclim_global("prec", "10", "worldclim_data/")
 
-locs <- c(srdb_filtered$Longitude, srdb_filtered$Latitude)
+locs <- tibble(Longitude = srdb_filtered$Longitude, Latitude = srdb_filtered$Latitude)
 
 matCoords <- terra::extract(mat, locs)
 mapCoords <- terra::extract(map, locs)
-
-# Remove useless ID column
-matCoords <- matCoords[,-which(names(matCoords) == "ID")]
-mapCoords <- mapCoords[,-which(names(mapCoords) == "ID")]
-
-# duplicate matCoords
-matCoordsSPEI <- matCoords[1:12]
-matCoordsSPEI[matCoordsSPEI < 0] <- NA # replace all subzero temps with NA
-matSPEIMeans <- rowMeans(matCoordsSPEI, na.rm = TRUE) # takes the mean temp of months above 0C (this isn't waht I want)
-# i want to get the months above 0 and average the SPEI of those months
-# hoW?
-
-
-
-
 
 # takes the mean annual temperature and the mean annual precipitation
 matMCoords <- rowMeans(matCoords, na.rm = TRUE)
 mapMCoords <- rowSums(mapCoords, na.rm = TRUE)
 
+# make temperature data into a nicer format to prepare for merging into spei_monthly
+matCoords %>% 
+  pivot_longer(-ID) %>% 
+  separate(name, into = c("wc2", "month"), sep = "tavg_", convert = TRUE) ->
+  matCoords
+matCoords <- matCoords[-2] # removes useless wc2 column
 
+# attaches temp data to spei_monthly
+spei_monthly %>% 
+  left_join(matCoords, by = c("ID", "month")) ->
+  spei_monthly
 
 
 # Compute gsd - growing season drought
-# TODO: Look at this step by step later, see what group_by is doing.
-# might need to remove year in order to do the dynamic growing season thing 
-# after year is ungrouped, set the SPEIS of the months with an average temp <0C to NA
-# and then do a rowmeans which you put into spei_monthly
+# this dynamically uses average temperature data to average the SPEI in months
+# that average above 10C
+
 spei_monthly %>%
   arrange(ID, year, month) %>%
   group_by(ID, year) %>%
-  summarise(gsd = mean(value[6:8]), .groups = "drop") ->
+  summarise(gsd = mean(value.x[which(value.y > 10)]), .groups = "drop") ->
   gsd
-
+# mean(value[as.numeric(speis of months where the average is above 10C)], na.rm = TRUE)
 # Merge back with coords
 coords %>%
   mutate(ID = seq_len(nrow(coords))) %>%
@@ -151,6 +146,6 @@ birchEffectData <- tibble(Longitude = srdb_filtered$Longitude,
 model1 <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_0, data = birchEffectData)
 print(summary(model1))
 model2 <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_flag, data = birchEffectData)
-
+print(summary(model2))
 # As of 7/25/24, contains Long, Lat, Year, Flux, MAT, MAP, SPEI for the year, and SPEI for last year
 head(birchEffectData)
