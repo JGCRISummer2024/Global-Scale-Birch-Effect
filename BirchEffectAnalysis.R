@@ -148,4 +148,4 @@ print(summary(model1))
 model2 <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_flag, data = birchEffectData)
 print(summary(model2))
 # As of 7/25/24, contains Long, Lat, Year, Flux, MAT, MAP, SPEI for the year, and SPEI for last year
-head(birchEffectData)
+print(birchEffectData)
