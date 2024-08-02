@@ -55,4 +55,4 @@ spei01.nc
 worldclim_data/climate/wc2.10m/*.tif
 
 # NPP data
-RenderData
+RenderData.tiff
