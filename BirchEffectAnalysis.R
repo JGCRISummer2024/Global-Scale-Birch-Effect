@@ -11,7 +11,7 @@ library(tidyr)
 
 
 
-# get SRDB
+#### get SRDB ####
 srdbData <- read.csv("srdb-data.csv")
 srdbData %>% 
   select(Latitude, Longitude, Study_midyear, Rs_annual, Rs_growingseason, Ecosystem_type) %>% 
@@ -53,6 +53,7 @@ if(file.exists(spei_dat_file)) {
   spei_dat <- terra::extract(spei, coords)
   saveRDS(spei_dat, file = spei_dat_file)
 }
+#### Get SPEI ####
 # Reshape data into a more manageable form
 spei_monthly <- pivot_longer(spei_dat, -ID)
 spei_monthly <- separate(spei_monthly, name, into = c("spei", "entry"), convert = TRUE)
@@ -65,11 +66,11 @@ spei_monthly$time <- with(spei_monthly, year + (month-1) / 12)
 
 # find growing season
 # growing season is the average time from the last frost to the first one
-# months where the average temperature is >0C?
-# months where the average low is >0C?
-# WorldClim only has minimum temp, not average min
+# since I don't have average min temp data from WorldClim, I will use
+# months that average >10C, which should roughly coincide with the last month to
+# get below 28F
 
-# get worldclim
+#### Get WorldClim ####
 mat <- worldclim_global("tavg", "10", "worldclim_data/")
 map <- worldclim_global("prec", "10", "worldclim_data/")
 
@@ -130,22 +131,31 @@ for(i in seq_len(nrow(srdb_filtered))) {
   srdb_filtered$gsd1[i] <- spei_i[2]
 }
 
+#### Get NPP ####
 
+x <- terra::rast("~/GitHub/CO2-variability-with-droughts/RenderData.tiff")
+y <- terra::extract(x, 1:(360*720))
+# 255 is the NA value, so we'll remove those
+x_clamp <- clamp(x, lower = 1, upper = 254, values = FALSE)
+# rescale the data to fit the scale on the website
+x_clamp <-  x_clamp*(1950/254) + 50
+net_primary_production <- terra::extract(x_clamp, locs)
 
+#### Analysis ####
 birchEffectData <- tibble(Longitude = srdb_filtered$Longitude, 
                               Latitude = srdb_filtered$Latitude,
                               Year = srdb_filtered$Study_midyear,
                               Annual_CO2_Flux = srdb_filtered$Rs_annual,
                               MAT = matMCoords,
                               MAP = mapMCoords,
+                              NPP = net_primary_production$RenderData,
                               spei_0 = srdb_filtered$gsd0,
                               spei_1 = srdb_filtered$gsd1,
                               # TODO: change flag, maybe
-                              spei_flag = (spei_0 >= 0 & spei_1 <= -1)
+                              spei_flag = (spei_0 >= 0 & spei_1 <= -0.5)
                               )
-model1 <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_0, data = birchEffectData)
-print(summary(model1))
-model2 <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_flag, data = birchEffectData)
-print(summary(model2))
-# As of 7/25/24, contains Long, Lat, Year, Flux, MAT, MAP, SPEI for the year, and SPEI for last year
+modelNoFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_0 + spei_1, data = birchEffectData)
+print(car::Anova(modelNoFlag, type = "III"))
+modelFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_0 + spei_1 + spei_flag, data = birchEffectData)
+print(car::Anova(modelFlag, type = "III"))
 print(birchEffectData)
