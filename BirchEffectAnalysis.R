@@ -9,7 +9,24 @@ library(terra)
 library(geodata)
 library(tidyr)
 
-
+# lowTemp <- tribble(
+#   ~city, ~minTemp, ~avgTemp,
+#   "seattle", 31.3, 47.1,
+#   "dc", 34.9, 58.2,
+#   "new york", 32.8, 53.7,
+#   "bangor", 30.8, 54.5,
+#   "fargo", 29.1, 56.6,
+#   "portland", 30.4, 48.3,
+#   "atlanta", 28.1, 55.6,
+#   "nashville", 32.7, 60.8,
+#   "minneapolis", 35.7, 59.5,
+#   "boise", 33, 59.9,
+#   "burlington", 32.2, 58.4
+# )
+#plot(lowTemp$minTemp, lowTemp$avgTemp)
+#tempmodel <- lm(avgTemp ~ minTemp, data = lowTemp)
+#print(summary(tempmodel))
+# regression shows the predicted mean temp for a month with a mean min of 28F is 52F (R^2 = 0.19)
 
 #### get SRDB ####
 srdbData <- read.csv("srdb-data.csv")
@@ -156,6 +173,6 @@ birchEffectData <- tibble(Longitude = srdb_filtered$Longitude,
                               )
 modelNoFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_0 + spei_1, data = birchEffectData)
 print(car::Anova(modelNoFlag, type = "III"))
-modelFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_0 + spei_1 + spei_flag, data = birchEffectData)
+modelFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_0 + spei_1 + spei_flag, data = birchEffectData)
 print(car::Anova(modelFlag, type = "III"))
 print(birchEffectData)
