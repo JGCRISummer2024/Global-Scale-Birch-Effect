@@ -168,11 +168,48 @@ birchEffectData <- tibble(Longitude = srdb_filtered$Longitude,
                               NPP = net_primary_production$RenderData,
                               spei_0 = srdb_filtered$gsd0,
                               spei_1 = srdb_filtered$gsd1,
-                              # TODO: change flag, maybe
-                              spei_flag = (spei_0 >= 0 & spei_1 <= -0.5)
+                              spei_flag = (spei_0 >= 0 & spei_1 <= -1)
                               )
-modelNoFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_0 + spei_1, data = birchEffectData)
-print(car::Anova(modelNoFlag, type = "III"))
-modelFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + spei_0 + spei_1 + spei_flag, data = birchEffectData)
+modelFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_flag, data = birchEffectData)
 print(car::Anova(modelFlag, type = "III"))
-print(birchEffectData)
+#print(birchEffectData)
+birchEffectData %>% 
+  filter(MAP > 5000) ->
+  birchEffectDataWet
+modelFlagFiltered <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_flag, data = birchEffectDataWet)
+print(car::Anova(modelFlagFiltered, type = "III"))
+
+birchEffectData %>% 
+  filter(MAP < 1600) ->
+  birchEffectDataDry
+modelFlagFiltered <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_flag, data = birchEffectDataDry)
+print(car::Anova(modelFlagFiltered, type = "III"))
+birchEffectSignificance <- tribble(
+  ~SPEI_Boundary, ~Significance,
+  -1, .000003397,
+  -0.9, 0.0015945,
+  -0.8, .000001843,
+  -0.7, 0.0005092,
+  -0.6, 0.1785825,
+  -0.5, .000000005727,
+  -0.4, .000000488,
+  -0.3, 0.033977,
+  -0.2, 0.4055886,
+  -0.1, 0.4390835
+)
+
+birchEffectSignificanceNoSPEI <- tribble(
+  ~SPEI_Boundary, ~Significance,
+  -1, .000005579,
+  -0.9, 0.0021710,
+  -0.8, .000004707,
+  -0.7, 0.0009511,
+  -0.6, 0.1969448,
+  -0.5, .0000001065,
+  -0.4, .000007967,
+  -0.3, 0.055382,
+  -0.2, 0.3954754,
+  -0.1, 0.4142759
+)
+print(birchEffectSignificance)
+# birch effect flag is a strong predictor of rs annual up to a drought index of -0.3, but excluding -0.6 for some reason. coincidence?
