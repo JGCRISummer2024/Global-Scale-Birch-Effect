@@ -1,32 +1,9 @@
-# All data in one data frame
-# Import in the following order:
-# srdb, spei, worldclim, modis
-# data frame should have columns: long, lat, year, rs, MAT, MAP, NPP, SPEI for the current year, SPEI for the last year, and finally a boolean representing the presence of a birch effect
 library(ggplot2)
 library(dplyr)
 library(tibble)
 library(terra)
 library(geodata)
 library(tidyr)
-
-# lowTemp <- tribble(
-#   ~city, ~minTemp, ~avgTemp,
-#   "seattle", 31.3, 47.1,
-#   "dc", 34.9, 58.2,
-#   "new york", 32.8, 53.7,
-#   "bangor", 30.8, 54.5,
-#   "fargo", 29.1, 56.6,
-#   "portland", 30.4, 48.3,
-#   "atlanta", 28.1, 55.6,
-#   "nashville", 32.7, 60.8,
-#   "minneapolis", 35.7, 59.5,
-#   "boise", 33, 59.9,
-#   "burlington", 32.2, 58.4
-# )
-#plot(lowTemp$minTemp, lowTemp$avgTemp)
-#tempmodel <- lm(avgTemp ~ minTemp, data = lowTemp)
-#print(summary(tempmodel))
-# regression shows the predicted mean temp for a month with a mean min of 28F is 52F (R^2 = 0.19)
 
 #### get SRDB ####
 srdbData <- read.csv("srdb-data.csv")
@@ -41,7 +18,6 @@ srdbData %>%
   filter(Rs_annual <= 4500) ->
   # TODO: maybe filter by latitude, or make it so it gets a different growing season for different places
   srdb_filtered
-#srdb_filtered <- srdb_filtered[1:10,] # TODO: delete when done (for testing)
 #make years easier to work with by elimiating the decimal
 srdb_filtered$Study_midyear <- floor(srdb_filtered$Study_midyear)
 
@@ -85,9 +61,10 @@ spei_monthly$time <- with(spei_monthly, year + (month-1) / 12)
 # growing season is the average time from the last frost to the first one
 # since I don't have average min temp data from WorldClim, I will use
 # months that average >10C, which should roughly coincide with the last month to
-# get below 28F
+# get below 28F (limit of the growing season according to the USDA)
 
 #### Get WorldClim ####
+
 mat <- worldclim_global("tavg", "10", "worldclim_data/")
 map <- worldclim_global("prec", "10", "worldclim_data/")
 
@@ -97,8 +74,8 @@ matCoords <- terra::extract(mat, locs)
 mapCoords <- terra::extract(map, locs)
 
 # takes the mean annual temperature and the mean annual precipitation
-matMCoords <- rowMeans(matCoords, na.rm = TRUE)
-mapMCoords <- rowSums(mapCoords, na.rm = TRUE)
+matMCoords <- rowMeans(matCoords[2:13])
+mapMCoords <- rowSums(mapCoords[2:13])
 
 # make temperature data into a nicer format to prepare for merging into spei_monthly
 matCoords %>% 
@@ -122,7 +99,6 @@ spei_monthly %>%
   group_by(ID, year) %>%
   summarise(gsd = mean(value.x[which(value.y > 10)]), .groups = "drop") ->
   gsd
-# mean(value[as.numeric(speis of months where the average is above 10C)], na.rm = TRUE)
 # Merge back with coords
 coords %>%
   mutate(ID = seq_len(nrow(coords))) %>%
@@ -148,6 +124,7 @@ for(i in seq_len(nrow(srdb_filtered))) {
   srdb_filtered$gsd1[i] <- spei_i[2]
 }
 
+
 #### Get NPP ####
 
 x <- terra::rast("~/GitHub/CO2-variability-with-droughts/RenderData.tiff")
@@ -166,50 +143,57 @@ birchEffectData <- tibble(Longitude = srdb_filtered$Longitude,
                               MAT = matMCoords,
                               MAP = mapMCoords,
                               NPP = net_primary_production$RenderData,
-                              spei_0 = srdb_filtered$gsd0,
-                              spei_1 = srdb_filtered$gsd1,
-                              spei_flag = (spei_0 >= 0 & spei_1 <= -1)
+                              spei_measured_year = srdb_filtered$gsd0,
+                              spei_previous_year = srdb_filtered$gsd1,
+                              birch_effect_potential = (spei_measured_year >= 0 & spei_previous_year <= -1)
                               )
-modelFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_flag, data = birchEffectData)
+
+modelFlag <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + birch_effect_potential, data = birchEffectData)
+message(paste("Printing birch effect analysis, N=", nrow(birchEffectData)))
 print(car::Anova(modelFlag, type = "III"))
-#print(birchEffectData)
+
+# wet locations
 birchEffectData %>% 
-  filter(MAP > 5000) ->
+  filter(MAP > 2000) ->
   birchEffectDataWet
-modelFlagFiltered <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_flag, data = birchEffectDataWet)
-print(car::Anova(modelFlagFiltered, type = "III"))
+message(paste("Printing only wet locations (MAP > 2000mm), N=", nrow(birchEffectDataWet)))
+modelFlagWet <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + birch_effect_potential, data = birchEffectDataWet)
+print(car::Anova(modelFlagWet, type = "III"))
 
+# arid/semi-arid locations excluding almost completely rainless areas
 birchEffectData %>% 
-  filter(MAP < 1600) ->
+  filter(MAP < 750) %>% 
+  filter(MAP > 100) ->
   birchEffectDataDry
-modelFlagFiltered <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + spei_flag, data = birchEffectDataDry)
-print(car::Anova(modelFlagFiltered, type = "III"))
-birchEffectSignificance <- tribble(
-  ~SPEI_Boundary, ~Significance,
-  -1, .000003397,
-  -0.9, 0.0015945,
-  -0.8, .000001843,
-  -0.7, 0.0005092,
-  -0.6, 0.1785825,
-  -0.5, .000000005727,
-  -0.4, .000000488,
-  -0.3, 0.033977,
-  -0.2, 0.4055886,
-  -0.1, 0.4390835
+message(paste("Printing only dry locations (MAP < 750mm), N=", nrow(birchEffectDataDry)))
+modelFlagDry <- lm(Annual_CO2_Flux ~ MAT + MAP + NPP + birch_effect_potential, data = birchEffectDataDry)
+print(car::Anova(modelFlagDry, type = "III"))
+
+# World map
+world_coords <- map_data("world")
+p <- ggplot() + geom_map(data = world_coords, map = world_coords, aes(long, lat, map_id = region), color = "gray", fill = "white") + geom_point(data = birchEffectData, aes(Longitude, Latitude, color = Annual_CO2_Flux), alpha = .5)
+print(p)
+
+
+# Climatology Graph
+presentationLoc <- tribble(
+  ~place, ~lon, ~lat,
+  "Richland", -119.273, 46.282
 )
 
-birchEffectSignificanceNoSPEI <- tribble(
-  ~SPEI_Boundary, ~Significance,
-  -1, .000005579,
-  -0.9, 0.0021710,
-  -0.8, .000004707,
-  -0.7, 0.0009511,
-  -0.6, 0.1969448,
-  -0.5, .0000001065,
-  -0.4, .000007967,
-  -0.3, 0.055382,
-  -0.2, 0.3954754,
-  -0.1, 0.4142759
-)
-print(birchEffectSignificance)
-# birch effect flag is a strong predictor of rs annual up to a drought index of -0.3, but excluding -0.6 for some reason. coincidence?
+presentationLoc$ID <- seq_len(nrow(presentationLoc))
+
+tavg_coords <- terra::extract(mat, presentationLoc[2:3])
+precip_coords <- terra::extract(map, presentationLoc[2:3])
+
+monthly <- pivot_longer(tavg_coords, -ID)
+monthly$month <- as.numeric(gsub("wc2.1_10m_tavg_", "", monthly$name))
+monthly <- dplyr::left_join(monthly, presentationLoc)
+
+precip_coords %>% 
+  pivot_longer(-ID) ->
+  precip_coords
+
+monthly$precip <- precip_coords$value
+p <- ggplot(monthly) + geom_bar(aes(x = month, y = precip, color = place), stat = "identity", fill = "lightblue", color = "lightblue") + geom_line(aes(x = month, y = (value * 9/5) + 32, color = place), stat = "identity", linewidth = 2) + ylab("Mean Air temperature (Fahrenheit)") + scale_y_continuous(sec.axis = sec_axis(transform = ~./25.4, name = "Rainfall (Inches)")) + ggtitle("Climatology") + scale_x_discrete(name = "Month", limits = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+print(p)
