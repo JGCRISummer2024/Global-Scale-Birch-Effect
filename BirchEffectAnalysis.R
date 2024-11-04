@@ -8,7 +8,7 @@ library(tidyr)
 #### get SRDB ####
 srdbData <- read.csv("srdb-data.csv")
 srdbData %>% 
-  select(Latitude, Longitude, Study_midyear, Rs_annual, Rs_growingseason, Ecosystem_type) %>% 
+  select(Latitude, Longitude, Study_midyear, Rs_annual) %>% 
   # remove all NAs except for the ones in rs_growingseason
   filter(!is.na(Rs_annual)) %>% 
   filter(!is.na(Latitude)) %>% 
@@ -16,7 +16,6 @@ srdbData %>%
   filter(!is.na(Study_midyear)) %>% 
   filter(Rs_annual >= 0) %>% 
   filter(Rs_annual <= 4500) ->
-  # TODO: maybe filter by latitude, or make it so it gets a different growing season for different places
   srdb_filtered
 #make years easier to work with by elimiating the decimal
 srdb_filtered$Study_midyear <- floor(srdb_filtered$Study_midyear)
@@ -127,7 +126,7 @@ for(i in seq_len(nrow(srdb_filtered))) {
 
 #### Get NPP ####
 
-x <- terra::rast("~/GitHub/CO2-variability-with-droughts/RenderData.tiff")
+x <- terra::rast("RenderData.tiff")
 y <- terra::extract(x, 1:(360*720))
 # 255 is the NA value, so we'll remove those
 x_clamp <- clamp(x, lower = 1, upper = 254, values = FALSE)
@@ -195,5 +194,14 @@ precip_coords %>%
   precip_coords
 
 monthly$precip <- precip_coords$value
-p <- ggplot(monthly) + geom_bar(aes(x = month, y = precip, color = place), stat = "identity", fill = "lightblue", color = "lightblue") + geom_line(aes(x = month, y = (value * 9/5) + 32, color = place), stat = "identity", linewidth = 2) + ylab("Mean Air temperature (Fahrenheit)") + scale_y_continuous(sec.axis = sec_axis(transform = ~./25.4, name = "Rainfall (Inches)")) + ggtitle("Climatology") + scale_x_discrete(name = "Month", limits = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+custom_colors <- c("Temperature" = "red", "Precipitation" = "lightblue")
+p <- ggplot(monthly) + 
+  geom_bar(aes(x = month, y = precip, fill = "Precipitation"), stat = "identity", color = "lightblue") + 
+  geom_line(aes(x = month, y = (value * 9/5) + 32, color = "Temperature"), stat = "identity", linewidth = 2) + 
+  ylab("Mean Air temperature (Fahrenheit)") + 
+  scale_y_continuous(sec.axis = sec_axis(transform = ~./25.4, name = "Rainfall (Inches)")) + 
+  ggtitle("Climatology in Richland, WA") + 
+  scale_x_discrete(name = "Month", limits = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")) + 
+  scale_color_manual(values = custom_colors, name = "") +
+  scale_fill_manual(values = custom_colors, name = "")
 print(p)
